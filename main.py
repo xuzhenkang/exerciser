@@ -19,9 +19,15 @@ class ExamSoftware:
         self.root.geometry("1000x700")
         self.root.minsize(900, 600)
 
+        # 设置应用程序图标
+        self.set_application_icon()
+
         # 设置中文字体支持
         self.font_family = "SimHei"
         self.style = ttk.Style()
+
+        # 初始化当前字体大小
+        self.current_font_size = 10
 
         # 颜色方案 - 美化界面
         self.colors = {
@@ -36,8 +42,6 @@ class ExamSoftware:
             "border": "#dadce0",  # 边框颜色
             "hover": "#e8f0fe"  # 悬停效果
         }
-
-        self.setup_styles()
 
         # 数据初始化
         self.current_index = 0  # 当前题目索引
@@ -73,8 +77,62 @@ class ExamSoftware:
         # 尝试加载上次使用的题库
         self.load_last_used_bank()
 
+        # 设置界面样式（在数据库初始化后调用）
+        self.setup_styles()
+
         # 创建主界面
         self.create_main_interface()
+
+    def set_application_icon(self):
+        """设置应用程序图标"""
+        try:
+            # 图标文件路径
+            icon_path = "ui/app.ico"
+
+            # 检查图标文件是否存在
+            if os.path.exists(icon_path):
+                # 设置主窗口图标
+                self.root.iconbitmap(icon_path)
+            else:
+                # 如果指定路径的图标不存在，尝试在其他常见位置查找
+                possible_paths = [
+                    "ui/app.ico",
+                    "./ui/app.ico",
+                    "../ui/app.ico",
+                    "app.ico",
+                    "./app.ico"
+                ]
+
+                for path in possible_paths:
+                    if os.path.exists(path):
+                        self.root.iconbitmap(path)
+                        break
+        except tk.TclError:
+            # 如果图标设置失败（例如文件不存在或格式不正确），则忽略错误
+            pass
+        except Exception:
+            # 捕获其他可能的异常
+            pass
+
+    def center_window(self, window, width, height):
+        """
+        将窗口居中显示在屏幕上的通用方法
+
+        Args:
+            window: 要居中的窗口
+            width: 窗口宽度
+            height: 窗口高度
+        """
+        # 获取屏幕尺寸
+        screen_width = window.winfo_screenwidth()
+        screen_height = window.winfo_screenheight()
+
+        # 计算居中位置
+        x = (screen_width - width) // 2
+        y = (screen_height - height) // 2
+
+        # 设置窗口位置和尺寸
+        window.geometry(f"{width}x{height}+{x}+{y}")
 
     def setup_styles(self):
         """设置界面样式"""
@@ -394,6 +452,25 @@ class ExamSoftware:
         wrong_btn.bind("<Leave>",
                        lambda e: e.widget.configure(bg="#f1f3f4") if e.widget["state"] == tk.NORMAL else None)
 
+        # 底部按钮区域
+        bottom_frame = tk.Frame(card_frame, bg=self.colors["card"])
+        bottom_frame.pack(fill=tk.X, pady=(20, 0))
+
+        # 设置按钮
+        settings_btn = tk.Button(
+            bottom_frame,
+            text="设置",
+            command=self.open_settings,
+            width=10,
+            font=(self.font_family, 10),
+            bg="#f1f3f4",
+            fg=self.colors["text"],
+            activebackground=self.colors["hover"],
+            relief=tk.FLAT,
+            cursor="hand2"
+        )
+        settings_btn.pack(side=tk.RIGHT, padx=10)
+
         # 状态标签
         self.status_label = ttk.Label(
             self.root,
@@ -404,10 +481,302 @@ class ExamSoftware:
         )
         self.status_label.pack(side=tk.BOTTOM, pady=20)
 
-    def import_from_excel(self):
-        """从Excel导入题库"""
+    def open_settings(self):
+        """打开设置窗口"""
+        settings_window = tk.Toplevel(self.root)
+        settings_window.title("设置")
+        settings_window.geometry("400x450")  # 增加窗口高度以容纳预览区域
+        settings_window.resizable(True, True)
+        settings_window.transient(self.root)
+        settings_window.grab_set()
+        settings_window.configure(bg=self.colors["bg"])
+
+        # 设置窗口图标
+        self.set_window_icon(settings_window)
+
+        # 居中显示窗口
+        self.center_window(settings_window, 400, 450)
+
+        # 标题栏
+        header = tk.Frame(settings_window, bg=self.colors["primary"], height=40)
+        header.pack(fill=tk.X)
+        header.pack_propagate(False)
+
+        ttk.Label(
+            header,
+            text="设置",
+            font=(self.font_family, 12, "bold"),
+            background=self.colors["primary"],
+            foreground="white"
+        ).pack(pady=8)
+
+        # 字体大小设置
+        font_frame = tk.Frame(settings_window, bg=self.colors["bg"])
+        font_frame.pack(fill=tk.X, padx=20, pady=20)
+
+        ttk.Label(
+            font_frame,
+            text="字体大小:",
+            font=(self.font_family, 10),
+            background=self.colors["bg"]
+        ).pack(side=tk.LEFT, padx=5)
+
+        # 使用类属性而不是查询数据库
+        current_font_size = self.current_font_size
+
+        font_size_var = tk.IntVar(value=current_font_size)
+        font_size_spinbox = tk.Spinbox(
+            font_frame,
+            from_=8,
+            to=20,
+            textvariable=font_size_var,
+            width=5,
+            font=(self.font_family, 10)
+        )
+        font_size_spinbox.pack(side=tk.LEFT, padx=5)
+
+        ttk.Label(
+            font_frame,
+            text="px",
+            font=(self.font_family, 10),
+            background=self.colors["bg"]
+        ).pack(side=tk.LEFT, padx=5)
+
+        # 预览按钮
+        preview_btn = tk.Button(
+            font_frame,
+            text="预览",
+            command=lambda: self.update_preview_labels(preview_label, box_sample, font_size_var.get()),
+            width=8,
+            font=(self.font_family, 10),
+            bg=self.colors["primary"],
+            fg="white",
+            activebackground="#3367d6",
+            relief=tk.FLAT,
+            cursor="hand2"
+        )
+        preview_btn.pack(side=tk.LEFT, padx=10)
+
+        # 字体预览区域
+        preview_frame = tk.Frame(settings_window, bg=self.colors["bg"], relief=tk.SOLID, bd=1)
+        preview_frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=10)
+
+        ttk.Label(
+            preview_frame,
+            text="字体预览:",
+            font=(self.font_family, 10, "bold"),
+            background=self.colors["bg"]
+        ).pack(anchor=tk.W, padx=5, pady=5)
+
+        # 预览标签
+        preview_label = ttk.Label(
+            preview_frame,
+            text="这是字体大小预览\nThe quick brown fox jumps over the lazy dog\n0123456789",
+            font=(self.font_family, current_font_size),
+            background="white",
+            wraplength=350,
+            relief=tk.SUNKEN
+        )
+        preview_label.pack(fill=tk.BOTH, expand=False, padx=10, pady=(0, 10), ipady=20)
+
+        # 进度框示例区域
+        box_preview_frame = tk.Frame(preview_frame, bg="white", relief=tk.SUNKEN, bd=1)
+        box_preview_frame.pack(fill=tk.X, padx=10, pady=(0, 10), ipady=10)
+
+        ttk.Label(
+            box_preview_frame,
+            text="进度框预览:",
+            font=(self.font_family, 9, "bold"),
+            background="white"
+        ).pack(anchor=tk.W, padx=5)
+
+        # 创建进度框示例
+        box_sample_container = tk.Frame(box_preview_frame, bg="white")
+        box_sample_container.pack(pady=5)
+
+        box_sample = tk.Frame(
+            box_sample_container,
+            width=max(28, current_font_size * 3),
+            height=max(28, current_font_size * 3),
+            bd=2,
+            relief=tk.SOLID,
+            bg=self.colors["card"],
+            highlightthickness=0
+        )
+        box_sample.pack()
+        box_sample.grid_propagate(False)
+        box_sample.is_sample_box = True  # 标记为示例框
+
+        box_sample_label = ttk.Label(
+            box_sample,
+            text="1",
+            font=(self.font_family, max(8, current_font_size - 2)),
+            background=self.colors["card"],
+            foreground=self.colors["text"]
+        )
+        box_sample_label.place(relx=0.5, rely=0.5, anchor=tk.CENTER)
+
+        # 按钮框架
+        btn_frame = tk.Frame(settings_window, bg=self.colors["bg"])
+        btn_frame.pack(fill=tk.X, padx=20, pady=20)
+
+        # 确定按钮
+        tk.Button(
+            btn_frame,
+            text="确定",
+            command=lambda: self.apply_font_size(font_size_var.get(), settings_window),
+            width=10,
+            height=1,
+            bg=self.colors["primary"],
+            fg="white",
+            activebackground="#3367d6",
+            activeforeground="white",
+            relief=tk.FLAT,
+            cursor="hand2",
+            font=(self.font_family, 10)
+        ).pack(side=tk.LEFT, padx=5)
+
+        # 取消按钮
+        cancel_btn = tk.Button(
+            btn_frame,
+            text="取消",
+            command=settings_window.destroy,
+            width=10,
+            height=1,
+            bg="#f1f3f4",
+            fg=self.colors["text"],
+            activebackground=self.colors["hover"],
+            activeforeground=self.colors["text"],
+            relief=tk.FLAT,
+            cursor="hand2",
+            font=(self.font_family, 10)
+        )
+        cancel_btn.pack(side=tk.RIGHT, padx=5)
+
+        # 重置按钮
+        reset_btn = tk.Button(
+            btn_frame,
+            text="重置",
+            command=lambda: [font_size_var.set(10), self.update_preview_labels(preview_label, box_sample, 10)],
+            width=10,
+            height=1,
+            bg="#f1f3f4",
+            fg=self.colors["text"],
+            activebackground=self.colors["hover"],
+            activeforeground=self.colors["text"],
+            relief=tk.FLAT,
+            cursor="hand2",
+            font=(self.font_family, 10)
+        )
+        reset_btn.pack(side=tk.LEFT, padx=5)
+
+    def update_preview_labels(self, preview_label, box_sample, font_size):
+        """更新预览标签和进度框示例的字体大小"""
+        # 更新文本预览标签
+        preview_label.config(font=(self.font_family, font_size))
+
+        # 更新进度框示例大小
+        box_size = max(28, font_size * 2)
+        box_sample.config(width=box_size, height=box_size)
+
+        # 更新进度框示例中的标签字体大小
+        for child in box_sample.winfo_children():
+            if isinstance(child, ttk.Label):
+                child.config(font=(self.font_family, max(8, font_size - 2)))
+
+        # 更新示例框的几何管理
+        box_sample.grid_propagate(False)
+
+    def apply_font_size(self, font_size, settings_window):
+        """应用字体大小设置"""
         try:
-            import xlrd  # 延迟导入，仅在需要时加载
+            # 保存字体大小到配置
+            if hasattr(self, 'conn') and self.conn:
+                self.cursor.execute(
+                    "INSERT OR REPLACE INTO config (key, value) VALUES (?, ?)",
+                    ('font_size', str(font_size))
+                )
+                self.conn.commit()
+
+            # 更新当前字体大小
+            self.current_font_size = font_size
+
+            # 重新配置样式
+            self.setup_styles()
+
+            # 如果在答题界面，需要刷新界面
+            if hasattr(self, 'content_frame') and self.content_frame and self.content_frame.winfo_exists():
+                # 重新显示当前题目
+                self.update_question_display()
+                self.update_progress_display()
+            else:
+                # 否则重新创建主界面
+                self.create_main_interface()
+
+            settings_window.destroy()
+            messagebox.showinfo("成功", "字体大小已更新")
+
+        except sqlite3.Error as e:
+            if hasattr(self, 'conn'):
+                self.conn.rollback()
+            messagebox.showerror("错误", f"保存设置失败: {str(e)}")
+
+    def setup_styles(self):
+        """设置界面样式"""
+        # 获取字体大小设置，默认为10
+        if hasattr(self, 'conn') and self.conn:
+            try:
+                self.cursor.execute("SELECT value FROM config WHERE key = 'font_size'")
+                result = self.cursor.fetchone()
+                self.current_font_size = int(result[0]) if result else 10
+            except sqlite3.Error:
+                self.current_font_size = 10
+        else:
+            self.current_font_size = 10
+
+        # 配置ttk样式
+        base_font = (self.font_family, self.current_font_size)
+        self.style.configure("TButton", font=base_font)
+        self.style.configure("TLabel", font=base_font)
+
+        # 自定义样式
+        self.style.configure("Header.TLabel", font=(self.font_family, self.current_font_size + 6, "bold"))
+        self.style.configure("Title.TLabel", font=(self.font_family, self.current_font_size + 14, "bold"))
+        self.style.configure("Question.TLabel", font=(self.font_family, self.current_font_size + 2))
+        self.style.configure("Option.TRadiobutton", font=(self.font_family, self.current_font_size + 1))
+        self.style.configure("Option.TCheckbutton", font=(self.font_family, self.current_font_size + 1))
+        self.style.configure("Status.TLabel", font=(self.font_family, self.current_font_size), foreground="gray")
+
+        # 按钮样式美化
+        self.style.configure("Primary.TButton",
+                             background=self.colors["primary"],
+                             foreground="white",
+                             font=(self.font_family, self.current_font_size, "bold"))
+        self.style.map("Primary.TButton",
+                       background=[("active", "#3367d6")])
+
+    def update_preview_label(self, preview_label, font_size):
+        """更新预览标签的字体大小"""
+        preview_label.config(font=(self.font_family, font_size))
+
+        # 同时更新预览区域中的进度框示例大小
+        # 查找预览区域中的示例进度框并更新其大小
+        preview_parent = preview_label.master
+        for widget in preview_parent.winfo_children():
+            if hasattr(widget, 'is_sample_box') and widget.is_sample_box:
+                # 根据字体大小动态计算方框大小
+                box_size = max(28, font_size * 2)
+                widget.config(width=box_size, height=box_size)
+
+                # 更新标签字体大小
+                for child in widget.winfo_children():
+                    if isinstance(child, ttk.Label):
+                        child.config(font=(self.font_family, max(8, font_size - 2)))
+
+    def import_from_excel(self):
+        """导入题库 - 美化版"""
+        try:
+            import xlrd
             if xlrd.__version__ > "1.2.0":
                 raise ImportError("xlrd版本过高，不支持xlsx格式，请安装1.2.0版本")
         except ImportError as e:
@@ -433,6 +802,12 @@ class ExamSoftware:
         dialog.transient(self.root)
         dialog.grab_set()
         dialog.configure(bg=self.colors["bg"])
+
+        # 设置窗口图标
+        self.set_window_icon(dialog)
+
+        # 居中显示窗口
+        self.center_window(dialog, 350, 180)
 
         # 添加标题栏
         header = tk.Frame(dialog, bg=self.colors["primary"], height=40)
@@ -560,6 +935,36 @@ class ExamSoftware:
             activebackground=self.colors["hover"],
             relief=tk.FLAT
         ).pack(side=tk.LEFT, padx=5)
+
+    def set_window_icon(self, window):
+        """为指定窗口设置图标"""
+        try:
+            # 图标文件路径
+            icon_path = "ui/app.ico"
+
+            # 检查图标文件是否存在
+            if os.path.exists(icon_path):
+                window.iconbitmap(icon_path)
+            else:
+                # 如果指定路径的图标不存在，尝试在其他常见位置查找
+                possible_paths = [
+                    "ui/app.ico",
+                    "./ui/app.ico",
+                    "../ui/app.ico",
+                    "app.ico",
+                    "./app.ico"
+                ]
+
+                for path in possible_paths:
+                    if os.path.exists(path):
+                        window.iconbitmap(path)
+                        break
+        except tk.TclError:
+            # 如果图标设置失败（例如文件不存在或格式不正确），则忽略错误
+            pass
+        except Exception:
+            # 捕获其他可能的异常
+            pass
 
     def load_question_bank(self):
         """从数据库加载题库"""
@@ -787,6 +1192,12 @@ class ExamSoftware:
         config_window.grab_set()  # 模态窗口，阻止操作主窗口
         config_window.configure(bg=self.colors["bg"])
 
+        # 设置窗口图标
+        self.set_window_icon(config_window)
+
+        # 居中显示窗口
+        self.center_window(config_window, 350, 250)
+
         # 标题栏
         header = tk.Frame(config_window, bg=self.colors["primary"], height=40)
         header.pack(fill=tk.X)
@@ -957,6 +1368,9 @@ class ExamSoftware:
         for widget in self.root.winfo_children():
             widget.destroy()
 
+        # 获取字体大小设置
+        font_size = self.current_font_size  # 使用类属性而不是查询数据库
+
         # 顶部标题栏
         header_frame = tk.Frame(self.root, bg=self.colors["primary"], height=50)
         header_frame.pack(fill=tk.X)
@@ -965,7 +1379,7 @@ class ExamSoftware:
         title_label = ttk.Label(
             header_frame,
             text="题刷刷",
-            font=(self.font_family, 14, "bold"),
+            font=(self.font_family, font_size + 4, "bold"),
             background=self.colors["primary"],
             foreground="white"
         )
@@ -991,7 +1405,7 @@ class ExamSoftware:
         ttk.Label(
             progress_frame,
             text="答题进度",
-            font=(self.font_family, 12, "bold"),
+            font=(self.font_family, font_size + 2, "bold"),
             background=self.colors["card"]
         ).pack(pady=10)
 
@@ -1043,7 +1457,8 @@ class ExamSoftware:
             activebackground=self.colors["hover"],
             padx=5,
             relief=tk.FLAT,
-            cursor="hand2"
+            cursor="hand2",
+            font=(self.font_family, font_size)
         ).pack(side=tk.LEFT, padx=10, pady=8)
 
         # 题目信息区域（用于后续更新）
@@ -1077,7 +1492,7 @@ class ExamSoftware:
         self.analysis_label = ttk.Label(
             self.analysis_frame,
             text="",
-            font=(self.font_family, 11),
+            font=(self.font_family, font_size + 1),
             wraplength=700,
             justify=tk.LEFT,
             foreground=self.colors["primary"],
@@ -1098,7 +1513,8 @@ class ExamSoftware:
             bg="#f1f3f4",
             activebackground=self.colors["hover"],
             relief=tk.FLAT,
-            cursor="hand2"
+            cursor="hand2",
+            font=(self.font_family, font_size)
         )
         self.prev_btn.pack(side=tk.LEFT, padx=10)
 
@@ -1111,7 +1527,8 @@ class ExamSoftware:
             foreground="white",
             activebackground="#3367d6",
             relief=tk.FLAT,
-            cursor="hand2"
+            cursor="hand2",
+            font=(self.font_family, font_size)
         )
         self.submit_btn.pack(side=tk.LEFT, padx=10)
 
@@ -1123,7 +1540,8 @@ class ExamSoftware:
             bg="#f1f3f4",
             activebackground=self.colors["hover"],
             relief=tk.FLAT,
-            cursor="hand2"
+            cursor="hand2",
+            font=(self.font_family, font_size)
         )
         self.next_btn.pack(side=tk.LEFT, padx=10)
 
@@ -1136,7 +1554,8 @@ class ExamSoftware:
             foreground="white",
             activebackground="#f9a825",
             relief=tk.FLAT,
-            cursor="hand2"
+            cursor="hand2",
+            font=(self.font_family, font_size)
         )
         self.mark_btn.pack(side=tk.RIGHT, padx=10)
 
@@ -1246,7 +1665,9 @@ class ExamSoftware:
         # 保存当前位置
         self.save_current_position()
 
-        # ... 原有代码保持不变 ...
+        # 使用类属性而不是查询数据库
+        font_size = self.current_font_size
+
         # 清除内容区域现有控件
         for widget in self.content_frame.winfo_children():
             widget.destroy()
@@ -1283,7 +1704,7 @@ class ExamSoftware:
         status_label = ttk.Label(
             self.info_frame,
             text=status_text,
-            font=(self.font_family, 10, "bold"),
+            font=(self.font_family, font_size, "bold"),
             foreground=status_color,
             background=self.colors["card"]
         )
@@ -1292,28 +1713,28 @@ class ExamSoftware:
         ttk.Label(
             self.info_frame,
             text=f"题型: {question['type']}",
-            font=(self.font_family, 10),
+            font=(self.font_family, font_size),
             background=self.colors["card"]
         ).pack(side=tk.LEFT, padx=10)
 
         ttk.Label(
             self.info_frame,
             text=f"难度: {question['difficulty']}",
-            font=(self.font_family, 10),
+            font=(self.font_family, font_size),
             background=self.colors["card"]
         ).pack(side=tk.LEFT, padx=10)
 
         ttk.Label(
             self.info_frame,
             text=f"分数: {question['score']}",
-            font=(self.font_family, 10),
+            font=(self.font_family, font_size),
             background=self.colors["card"]
         ).pack(side=tk.LEFT, padx=10)
 
         ttk.Label(
             self.info_frame,
             text=f"第 {display_number}/{len(self.current_questions)} 题",
-            font=(self.font_family, 10),
+            font=(self.font_family, font_size),
             background=self.colors["card"]
         ).pack(side=tk.LEFT, padx=10)
 
@@ -1324,7 +1745,7 @@ class ExamSoftware:
         ttk.Label(
             content_frame,
             text=f"题目: {question['content']}",
-            font=(self.font_family, 12),
+            font=(self.font_family, font_size + 2),
             wraplength=700,
             justify=tk.LEFT,
             background=self.colors["card"]
@@ -1356,7 +1777,7 @@ class ExamSoftware:
                     text=display_text,
                     variable=self.var,
                     value=value,
-                    font=(self.font_family, 11),
+                    font=(self.font_family, font_size + 1),
                     anchor=tk.W,
                     bg=self.colors["card"],
                     command=lambda q=question: self.auto_save_answer(q),
@@ -1381,7 +1802,7 @@ class ExamSoftware:
                     options_frame,
                     text=f"{chr(65 + i)}. {option}",
                     variable=var,
-                    font=(self.font_family, 11),
+                    font=(self.font_family, font_size + 1),
                     anchor=tk.W,
                     bg=self.colors["card"],
                     command=lambda q=question: self.auto_save_answer(q),
@@ -1406,6 +1827,12 @@ class ExamSoftware:
         self.submit_btn.config(command=lambda: self.submit_answer_and_view_analysis(question))
         self.mark_btn.config(command=lambda: self.mark_as_wrong(question))
 
+        # 更新按钮字体
+        self.prev_btn.config(font=(self.font_family, font_size))
+        self.submit_btn.config(font=(self.font_family, font_size))
+        self.next_btn.config(font=(self.font_family, font_size))
+        self.mark_btn.config(font=(self.font_family, font_size))
+
         # 更新进度框高亮状态
         self.highlight_current_progress_box()
 
@@ -1415,10 +1842,16 @@ class ExamSoftware:
         bg_color = self.colors["success"] if question_id in self.user_answers else self.colors["card"]
         fg_color = "white" if question_id in self.user_answers else self.colors["text"]
 
+        # 使用类属性而不是查询数据库
+        font_size = self.current_font_size
+
+        # 根据字体大小动态计算方框大小，确保数字能完整显示
+        box_size = max(28, font_size * 3)  # 最小28像素，随着字体增大而增大
+
         box_frame = tk.Frame(
             parent,
-            width=28,
-            height=28,
+            width=box_size,
+            height=box_size,
             bd=2,
             relief=tk.SOLID,
             bg=bg_color,
@@ -1445,7 +1878,7 @@ class ExamSoftware:
         box_label = ttk.Label(
             box_frame,
             text=str(display_number),
-            font=(self.font_family, 9),
+            font=(self.font_family, max(8, font_size - 2)),  # 标签字体大小也根据设置调整，但不小于8
             background=bg_color,
             foreground=fg_color
         )
@@ -1596,11 +2029,11 @@ class ExamSoftware:
                                 # 正确答案高亮显示为绿色
                                 if value in question["answer"]:
                                     option_widget.config(foreground=self.colors["success"],
-                                                         font=(self.font_family, 11, "bold"))
+                                                         font=(self.font_family, self.current_font_size, "bold"))
                                 # 用户选择的错误答案显示为红色
                                 elif value in user_answer and value not in question["answer"]:
                                     option_widget.config(foreground=self.colors["danger"],
-                                                         font=(self.font_family, 11, "bold"))
+                                                         font=(self.font_family, self.current_font_size, "bold"))
 
         # 更新进度框颜色
         for box_id, idx in self.question_index_map.items():
