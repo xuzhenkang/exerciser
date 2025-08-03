@@ -15,7 +15,7 @@ class ExamSoftware:
     def __init__(self, root):
         """初始化刷题软件"""
         self.root = root
-        self.root.title("智能刷题软件")
+        self.root.title("题刷刷")
         self.root.geometry("1000x700")
         self.root.minsize(900, 600)
 
@@ -40,6 +40,8 @@ class ExamSoftware:
         self.setup_styles()
 
         # 数据初始化
+        self.current_index = 0  # 当前题目索引
+        self.last_practice_positions = {}  # 存储每种练习模式的最后位置
         self.question_bank = []  # 题库
         self.current_questions = []  # 当前练习的题目
         self.current_index = 0  # 当前题目索引
@@ -285,7 +287,7 @@ class ExamSoftware:
 
         title_label = ttk.Label(
             header_frame,
-            text="智能刷题软件",
+            text="题刷刷",
             style="Title.TLabel",
             background=self.colors["primary"],
             foreground="white"
@@ -491,7 +493,7 @@ class ExamSoftware:
                             "type": row[1] if len(row) > 1 else "单选",  # 试题类型
                             "is_subquestion": 1 if (len(row) > 2 and str(row[2]).lower() in ["true", "1", "是"]) else 0,
                             "options": "|".join(str(opt).strip() for opt in row[3].split('|')) if (
-                                        len(row) > 3 and row[3]) else "",
+                                    len(row) > 3 and row[3]) else "",
                             "difficulty": row[4] if len(row) > 4 else "中等",
                             "analysis": row[5] if len(row) > 5 else "",
                             "answer": row[6] if len(row) > 6 else "",
@@ -620,31 +622,35 @@ class ExamSoftware:
 
         # 根据模式选择题目顺序
         if mode == "sequence":
-            # 检查是否已有保存的顺序
+            # 按题型分组排序：单选题、多选题、判断题
+            single_questions = [q for q in self.question_bank if q["type"] == "单选"]
+            multiple_questions = [q for q in self.question_bank if q["type"] == "多选"]
+            judge_questions = [q for q in self.question_bank if q["type"] == "判断"]
+
+            # 按ID排序每种题型内的题目
+            single_questions.sort(key=lambda q: q["id"])
+            multiple_questions.sort(key=lambda q: q["id"])
+            judge_questions.sort(key=lambda q: q["id"])
+
+            # 按顺序组合题目
+            self.current_questions = single_questions + multiple_questions + judge_questions
+
+            # 保存题目顺序
+            self.save_question_order(mode)
+
+            # 加载上次练习位置
             try:
                 self.cursor.execute(
-                    "SELECT question_id FROM question_orders "
-                    "WHERE bank_id = ? AND mode = ? ORDER BY position",
-                    (self.current_bank_id, mode)
+                    "SELECT value FROM config WHERE key = ?",
+                    (f"last_position_{mode}_{self.current_bank_id}",)
                 )
-
-                saved_order = [row[0] for row in self.cursor.fetchall()]
-
-                if saved_order and len(saved_order) == len(self.question_bank):
-                    # 使用保存的顺序
-                    self.current_questions = []
-                    for qid in saved_order:
-                        for q in self.question_bank:
-                            if q["id"] == qid:
-                                self.current_questions.append(q)
-                                break
-                else:
-                    # 按ID顺序，并保存顺序
-                    self.current_questions = self.question_bank.copy()
-                    self.save_question_order(mode)
+                result = self.cursor.fetchone()
+                if result:
+                    last_index = int(result[0])
+                    if 0 <= last_index < len(self.current_questions):
+                        self.current_index = last_index
             except sqlite3.Error as e:
-                messagebox.showerror("数据库错误", f"加载题目顺序失败: {str(e)}")
-                self.current_questions = self.question_bank.copy()
+                print(f"加载上次练习位置失败: {str(e)}")
 
         elif mode == "random":
             # 检查是否已有保存的随机顺序
@@ -657,23 +663,70 @@ class ExamSoftware:
 
                 saved_order = [row[0] for row in self.cursor.fetchall()]
 
-                # 检查保存的顺序是否有效
-                if saved_order and len(saved_order) == len(self.question_bank):
+                # 检查是否是第一次使用随机练习
+                is_first_time = not (saved_order and len(saved_order) == len(self.question_bank))
+
+                need_shuffle = True
+                if not is_first_time:
+                    # 如果不是第一次，询问用户是否需要重新打乱顺序
+                    result = messagebox.askyesno("随机练习",
+                                                 "是否需要重新打乱题目顺序？\n选择“是”将重新打乱题目顺序，选择“否”将保持上次的顺序。")
+                    need_shuffle = result
+
+                if need_shuffle or is_first_time:
+                    # 按题型分组并分别随机排序
+                    single_questions = [q for q in self.question_bank if q["type"] == "单选"]
+                    multiple_questions = [q for q in self.question_bank if q["type"] == "多选"]
+                    judge_questions = [q for q in self.question_bank if q["type"] == "判断"]
+
+                    # 分别打乱各题型
+                    random.shuffle(single_questions)
+                    random.shuffle(multiple_questions)
+                    random.shuffle(judge_questions)
+
+                    # 按顺序组合
+                    self.current_questions = single_questions + multiple_questions + judge_questions
+                    self.save_question_order(mode)
+                    # 如果是重新打乱顺序，则从第一题开始
+                    self.current_index = 0
+                else:
+                    # 使用保存的顺序
                     self.current_questions = []
                     for qid in saved_order:
                         for q in self.question_bank:
                             if q["id"] == qid:
                                 self.current_questions.append(q)
                                 break
-                else:
-                    # 随机排序，并保存顺序
-                    self.current_questions = random.sample(self.question_bank, len(self.question_bank))
-                    self.save_question_order(mode)
             except sqlite3.Error as e:
                 messagebox.showerror("数据库错误", f"加载题目顺序失败: {str(e)}")
-                self.current_questions = random.sample(self.question_bank, len(self.question_bank))
+                # 如果出错，使用默认随机排序
+                single_questions = [q for q in self.question_bank if q["type"] == "单选"]
+                multiple_questions = [q for q in self.question_bank if q["type"] == "多选"]
+                judge_questions = [q for q in self.question_bank if q["type"] == "判断"]
 
-        # 显示第一题
+                random.shuffle(single_questions)
+                random.shuffle(multiple_questions)
+                random.shuffle(judge_questions)
+
+                self.current_questions = single_questions + multiple_questions + judge_questions
+                self.save_question_order(mode)
+
+            # 加载上次练习位置（仅在使用保存的顺序时）
+            if not is_first_time and not need_shuffle:
+                try:
+                    self.cursor.execute(
+                        "SELECT value FROM config WHERE key = ?",
+                        (f"last_position_{mode}_{self.current_bank_id}",)
+                    )
+                    result = self.cursor.fetchone()
+                    if result:
+                        last_index = int(result[0])
+                        if 0 <= last_index < len(self.current_questions):
+                            self.current_index = last_index
+                except sqlite3.Error as e:
+                    print(f"加载上次练习位置失败: {str(e)}")
+
+        # 显示题目
         self.init_question_interface()
         self.update_question_display()
         self.update_progress_display()
@@ -702,6 +755,22 @@ class ExamSoftware:
         except sqlite3.Error as e:
             self.conn.rollback()
             messagebox.showerror("数据库错误", f"保存题目顺序失败: {str(e)}")
+
+    def save_current_position(self):
+        """保存当前练习位置"""
+        if not self.current_bank_id or not self.mode:
+            return
+
+        try:
+            key = f"last_position_{self.mode}_{self.current_bank_id}"
+            self.cursor.execute(
+                "INSERT OR REPLACE INTO config (key, value) VALUES (?, ?)",
+                (key, str(self.current_index))
+            )
+            self.conn.commit()
+        except sqlite3.Error as e:
+            self.conn.rollback()
+            print(f"保存当前位置失败: {str(e)}")
 
     def create_exam(self):
         """创建组合试卷 - 美化版"""
@@ -895,7 +964,7 @@ class ExamSoftware:
 
         title_label = ttk.Label(
             header_frame,
-            text="智能刷题软件",
+            text="题刷刷",
             font=(self.font_family, 14, "bold"),
             background=self.colors["primary"],
             foreground="white"
@@ -1035,8 +1104,8 @@ class ExamSoftware:
 
         self.submit_btn = tk.Button(
             self.btn_frame,
-            text="提交答案",
-            command=self.submit_answer,
+            text="查看解析",
+            command=self.submit_answer_and_view_analysis,
             width=15,
             bg=self.colors["primary"],
             foreground="white",
@@ -1174,6 +1243,10 @@ class ExamSoftware:
 
     def update_question_display(self):
         """更新题目内容显示，实现连续编号显示，并添加答题状态"""
+        # 保存当前位置
+        self.save_current_position()
+
+        # ... 原有代码保持不变 ...
         # 清除内容区域现有控件
         for widget in self.content_frame.winfo_children():
             widget.destroy()
@@ -1330,7 +1403,7 @@ class ExamSoftware:
             self.next_btn.config(text="下一题", command=self.next_question)
 
         # 绑定当前题目到按钮命令
-        self.submit_btn.config(command=lambda: self.submit_answer(question))
+        self.submit_btn.config(command=lambda: self.submit_answer_and_view_analysis(question))
         self.mark_btn.config(command=lambda: self.mark_as_wrong(question))
 
         # 更新进度框高亮状态
@@ -1352,21 +1425,6 @@ class ExamSoftware:
             highlightthickness=0,
             cursor="hand2"
         )
-        # 按题型内顺序排列，每行显示5个，从第一列开始（index % 5确保从0开始）
-        box_frame.grid(row=index // 5, column=index % 5, padx=3, pady=3)
-        box_frame.grid_propagate(False)
-
-        # 显示全局编号
-        ttk.Label(
-            box_frame,
-            text=str(display_number),
-            font=(self.font_family, 9),
-            background=bg_color,
-            foreground=fg_color
-        ).place(relx=0.5, rely=0.5, anchor=tk.CENTER)
-
-        # 存储方框引用，便于后续更新高亮状态
-        self.progress_frames[box_id] = box_frame
 
         # 添加点击事件，允许通过点击进度框跳转到对应题目
         # 使用lambda函数确保每次绑定都使用当前的box_id值
@@ -1383,6 +1441,25 @@ class ExamSoftware:
 
         # 存储box_id以便后续引用
         box_frame.box_id = box_id
+        # 显示全局编号
+        box_label = ttk.Label(
+            box_frame,
+            text=str(display_number),
+            font=(self.font_family, 9),
+            background=bg_color,
+            foreground=fg_color
+        )
+        box_label.place(relx=0.5, rely=0.5, anchor=tk.CENTER)
+
+        # 为标签绑定相同的点击事件
+        box_label.bind("<Button-1>", lambda e, bid=box_id: self.jump_to_question_by_box_id(bid))
+
+        # 存储方框引用，便于后续更新高亮状态
+        self.progress_frames[box_id] = box_frame
+
+        # 按题型内顺序排列，每行显示5个，从第一列开始（index % 5确保从0开始）
+        box_frame.grid(row=index // 5, column=index % 5, padx=3, pady=3)
+        box_frame.grid_propagate(False)
 
         return box_frame
 
@@ -1463,8 +1540,8 @@ class ExamSoftware:
                 self.conn.rollback()
                 messagebox.showerror("数据库错误", f"保存答案失败: {str(e)}")
 
-    def submit_answer(self, question):
-        """提交答案"""
+    def submit_answer_and_view_analysis(self, question):
+        """查看解析"""
         user_answer = self.get_user_answer(question["type"])
 
         if not user_answer:
@@ -1484,7 +1561,7 @@ class ExamSoftware:
             self.conn.commit()
         except sqlite3.Error as e:
             self.conn.rollback()
-            messagebox.showerror("数据库错误", f"提交答案失败: {str(e)}")
+            messagebox.showerror("数据库错误", f"查看解析失败: {str(e)}")
 
         # 显示解析区域
         self.analysis_frame.pack(fill=tk.BOTH, expand=True, anchor=tk.W, pady=10)
@@ -1518,10 +1595,12 @@ class ExamSoftware:
 
                                 # 正确答案高亮显示为绿色
                                 if value in question["answer"]:
-                                    option_widget.config(foreground=self.colors["success"], font=(self.font_family, 11, "bold"))
+                                    option_widget.config(foreground=self.colors["success"],
+                                                         font=(self.font_family, 11, "bold"))
                                 # 用户选择的错误答案显示为红色
                                 elif value in user_answer and value not in question["answer"]:
-                                    option_widget.config(foreground=self.colors["danger"], font=(self.font_family, 11, "bold"))
+                                    option_widget.config(foreground=self.colors["danger"],
+                                                         font=(self.font_family, 11, "bold"))
 
         # 更新进度框颜色
         for box_id, idx in self.question_index_map.items():
@@ -1540,13 +1619,15 @@ class ExamSoftware:
                 widget["foreground"] = self.colors["success"]
 
     def prev_question(self):
-        """上一题"""
+        """上一题 - 按照进度框显示顺序"""
         if self.current_index > 0:
             self.current_index -= 1
             self.update_question_display()
+        else:
+            messagebox.showinfo("提示", "已经是第一题了")
 
     def next_question(self):
-        """下一题"""
+        """下一题 - 按照进度框显示顺序"""
         if self.current_index < len(self.current_questions) - 1:
             self.current_index += 1
             self.update_question_display()
